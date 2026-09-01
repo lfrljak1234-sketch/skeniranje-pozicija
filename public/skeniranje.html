@@ -8,6 +8,7 @@
   :root {
     --ok: #1b8a3e; --ok-bg: #e6f6ea;
     --miss: #c62828; --miss-bg: #fdecea;
+    --partial: #b5750a; --partial-bg: #fff4e0;
     --border: #ddd; --muted: #666;
   }
   * { box-sizing: border-box; }
@@ -34,9 +35,12 @@
   tr.done td.status { color: var(--ok); font-weight: 600; }
   tr.missing td.status { color: var(--miss); font-weight: 600; }
   tr.missing { background: var(--miss-bg); }
+  tr.partial td.status { color: var(--partial); font-weight: 600; }
+  tr.partial { background: var(--partial-bg); }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; font-weight: 600; }
   .badge.ok { background: var(--ok-bg); color: var(--ok); }
   .badge.miss { background: var(--miss-bg); color: var(--miss); }
+  .badge.partial { background: var(--partial-bg); color: var(--partial); }
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
   button, .btn { background: #333; color: #fff; border: none; border-radius: 6px; padding: 7px 12px; font-size: 0.85rem; cursor: pointer; text-decoration: none; }
   button.secondary, .btn.secondary { background: #eee; color: #333; }

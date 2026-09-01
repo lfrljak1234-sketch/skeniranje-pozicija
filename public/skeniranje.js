@@ -81,6 +81,17 @@ function colorCellHtml(it) {
   return '';
 }
 
+function statusBadgeHtml(it) {
+  if (it.statusSkeniranja === 'potpuno') {
+    return `<span class="badge ok">skenirano</span>`;
+  }
+  if (it.statusSkeniranja === 'djelomicno') {
+    const kol = it.qty != null ? `${it.komadaSkenirano}/${it.qty}` : it.komadaSkenirano;
+    return `<span class="badge partial">djelomično (${kol})</span>`;
+  }
+  return `<span class="badge miss">nije skenirano</span>`;
+}
+
 function render() {
   const onlyMissing = document.getElementById('onlyMissing').checked;
   const root = document.getElementById('nalozi');
@@ -97,13 +108,14 @@ function render() {
 
     const header = document.createElement('div');
     header.className = 'nalog-header';
+    const partialNote = nalog.partial ? ` <span class="muted">(${nalog.partial} djelomično)</span>` : '';
     header.innerHTML = `
       <div>
         <h2>${nalog.nalogPuni} ${nalog.projekt ? '<span class="muted">— ' + nalog.projekt + '</span>' : ''}</h2>
         <div class="muted">${nalog.opis || ''}</div>
       </div>
       <div class="progress-wrap">
-        <span>${nalog.done}/${nalog.total}</span>
+        <span>${nalog.done}/${nalog.total}${partialNote}</span>
         <div class="progress-bar"><div class="progress-fill" style="width:${nalog.percent}%"></div></div>
         <span>${nalog.percent}%</span>
         <a class="btn secondary" href="/api/export/${nalog.nalogBase}.csv" onclick="event.stopPropagation()">CSV</a>
@@ -117,18 +129,16 @@ function render() {
     const body = document.createElement('div');
     body.className = 'items-body';
 
-    const items = onlyMissing ? nalog.items.filter(i => !i.skenirano) : nalog.items;
+    const items = onlyMissing ? nalog.items.filter(i => i.statusSkeniranja !== 'potpuno') : nalog.items;
     let rows = items.map(it => `
-      <tr class="${it.skenirano ? 'done' : 'missing'}">
+      <tr class="${it.statusSkeniranja === 'potpuno' ? 'done' : (it.statusSkeniranja === 'djelomicno' ? 'partial' : 'missing')}">
         <td>${it.item}</td>
         <td>${it.partNumber}</td>
         <td>${it.description}</td>
         <td>${colorCellHtml(it)}</td>
         <td>${it.qty ?? ''}</td>
-        <td class="status">${it.skenirano
-          ? `<span class="badge ok">skenirano</span>`
-          : `<span class="badge miss">nije skenirano</span>`}</td>
-        <td>${it.brojSkeniranja || ''}</td>
+        <td class="status">${statusBadgeHtml(it)}</td>
+        <td>${it.komadaSkenirano || ''}</td>
         <td>${it.zadnjiSken || ''}</td>
       </tr>
     `).join('');
@@ -137,7 +147,7 @@ function render() {
     body.innerHTML = `
       <table>
         <thead><tr>
-          <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># skena</th><th>Zadnji sken</th>
+          <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># komada skenirano</th><th>Zadnji sken</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
