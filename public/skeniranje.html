@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Praćenje skeniranja pozicija</title>
+<style>
+  :root {
+    --ok: #1b8a3e; --ok-bg: #e6f6ea;
+    --miss: #c62828; --miss-bg: #fdecea;
+    --border: #ddd; --muted: #666;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 16px; background: #f7f7f8; color: #222; }
+  h1 { font-size: 1.3rem; margin: 0 0 12px; }
+  h2 { font-size: 1.05rem; margin: 0; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .upload-row { display: flex; flex-wrap: wrap; gap: 16px; }
+  .upload-box { flex: 1 1 280px; border: 2px dashed #bbb; border-radius: 10px; padding: 16px; text-align: center; }
+  .upload-box.drag { border-color: #4a90d9; background: #f0f7ff; }
+  .upload-box input { display: none; }
+  .upload-box label { display: inline-block; margin-top: 8px; padding: 8px 14px; background: #333; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+  .muted { color: var(--muted); font-size: 0.85rem; }
+  .status-line { margin-top: 8px; font-size: 0.85rem; }
+  .nalog-summary { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .nalog-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; cursor: pointer; background: #fafafa; }
+  .nalog-header:hover { background: #f0f0f0; }
+  .progress-wrap { display: flex; align-items: center; gap: 8px; min-width: 200px; }
+  .progress-bar { flex: 1; height: 8px; background: #eee; border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--ok); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+  th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #eee; }
+  th { background: #f5f5f5; position: sticky; top: 0; }
+  tr.done td.status { color: var(--ok); font-weight: 600; }
+  tr.missing td.status { color: var(--miss); font-weight: 600; }
+  tr.missing { background: var(--miss-bg); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; font-weight: 600; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.miss { background: var(--miss-bg); color: var(--miss); }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  button, .btn { background: #333; color: #fff; border: none; border-radius: 6px; padding: 7px 12px; font-size: 0.85rem; cursor: pointer; text-decoration: none; }
+  button.secondary, .btn.secondary { background: #eee; color: #333; }
+  button.danger { background: #c62828; }
+  .items-body { display: none; padding: 0 14px 14px; }
+  .items-body.open { display: block; }
+  .filter-row { margin: 8px 0; }
+  input[type=checkbox] { transform: scale(1.1); margin-right: 4px; }
+  #globalStatus { font-size: 0.85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Praćenje skeniranja pozicija</h1>
+
+<div class="card">
+  <div class="upload-row">
+    <div class="upload-box" id="boxNalozi">
+      <strong>Radni nalozi (Excel)</strong>
+      <div class="muted">.xlsx / .xlsm — možeš odjednom uploadati više njih</div>
+      <input type="file" id="inputNalozi" accept=".xlsx,.xlsm" multiple>
+      <label for="inputNalozi">Odaberi datoteke</label>
+      <div class="status-line" id="statusNalozi"></div>
+    </div>
+    <div class="upload-box" id="boxSkenovi">
+      <strong>CSV sa skenovima</strong>
+      <div class="muted">Uploadaj najnoviji <em>puni</em> izvoz — zamjenjuje prethodni</div>
+      <input type="file" id="inputSkenovi" accept=".csv">
+      <label for="inputSkenovi">Odaberi CSV</label>
+      <div class="status-line" id="statusSkenovi"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <button onclick="refresh()">Osvježi prikaz</button>
+  <a class="btn secondary" href="/api/export-all.csv">Izvezi sve neskenirano (CSV)</a>
+  <label style="margin-left:auto;"><input type="checkbox" id="onlyMissing"> Prikaži samo neskenirane pozicije</label>
+</div>
+<div id="globalStatus"></div>
+
+<div id="nalozi"></div>
+
+<script src="/skeniranje.js"></script>
+</body>
+</html>
