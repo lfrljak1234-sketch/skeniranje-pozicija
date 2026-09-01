@@ -132,15 +132,16 @@ function render() {
         <td>${it.qty ?? ''}</td>
         <td class="status">${statusBadgeHtml(it)}</td>
         <td>${it.komadaSkenirano || ''}</td>
+        <td>${(it.stanice || []).join(', ')}</td>
         <td>${it.zadnjiSken || ''}</td>
       </tr>
     `).join('');
-    if (!rows) rows = '<tr><td colspan="8" class="muted">Sve pozicije skenirane.</td></tr>';
+    if (!rows) rows = '<tr><td colspan="9" class="muted">Sve pozicije skenirane.</td></tr>';
 
     body.innerHTML = `
       <table>
         <thead><tr>
-          <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># komada skenirano</th><th>Zadnji sken</th>
+          <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># komada skenirano</th><th>Stanica</th><th>Zadnji sken</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
