@@ -1,67 +1,48 @@
 const express = require('express');
 const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
 const { parseNalogWorkbook, parseSkenoviCsv, computeStatus } = require('../lib/parse');
+const { loadJson, saveJson } = require('../lib/store');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
-// Podaci se spremaju u data/ mapu (isti obrazac kao vikend-raspored aplikacija).
-// NAPOMENA: na Render free planu disk je privremen - kod restarta/redeploya
-// ovi podaci se gube. Radne naloge i zadnji CSV izvoz treba ponovno uploadati
-// nakon svakog redeploya/restarta.
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const NALOZI_FILE = path.join(DATA_DIR, 'nalozi.json');
-const SKENOVI_FILE = path.join(DATA_DIR, 'skenovi.json');
+// Podaci se spremaju u Supabase (tablica kv_store), pa ostaju trajno
+// sačuvani i preživljavaju restart/redeploy Render servisa.
+const NALOZI_KEY = 'nalozi';
+const SKENOVI_KEY = 'skenovi';
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-function loadJson(file, fallback) {
-  try {
-    if (!fs.existsSync(file)) return fallback;
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (e) {
-    console.error('Greška pri čitanju', file, e.message);
-    return fallback;
-  }
-}
-
-function saveJson(file, data) {
-  ensureDataDir();
-  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
-}
-
-function loadNalozi() { return loadJson(NALOZI_FILE, {}); }
-function loadSkenovi() { return loadJson(SKENOVI_FILE, { byKey: {}, meta: null }); }
+function loadNalozi() { return loadJson(NALOZI_KEY, {}); }
+function loadSkenovi() { return loadJson(SKENOVI_KEY, { byKey: {}, meta: null }); }
 
 // --- Upload radnih naloga (jedan ili više .xlsx/.xlsm) ---
-router.post('/api/nalozi', upload.array('files', 100), (req, res) => {
+router.post('/api/nalozi', upload.array('files', 100), async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: 'Nema poslanih datoteka.' });
   }
-  const nalozi = loadNalozi();
-  const rezultati = [];
-  const greske = [];
+  try {
+    const nalozi = await loadNalozi();
+    const rezultati = [];
+    const greske = [];
 
-  for (const file of req.files) {
-    try {
-      const parsed = parseNalogWorkbook(file.buffer, file.originalname);
-      nalozi[parsed.nalogBase] = parsed;
-      rezultati.push({ file: file.originalname, nalogBase: parsed.nalogBase, stavki: parsed.items.length });
-    } catch (e) {
-      greske.push({ file: file.originalname, error: e.message });
+    for (const file of req.files) {
+      try {
+        const parsed = parseNalogWorkbook(file.buffer, file.originalname);
+        nalozi[parsed.nalogBase] = parsed;
+        rezultati.push({ file: file.originalname, nalogBase: parsed.nalogBase, stavki: parsed.items.length });
+      } catch (e) {
+        greske.push({ file: file.originalname, error: e.message });
+      }
     }
-  }
 
-  saveJson(NALOZI_FILE, nalozi);
-  res.json({ ok: true, uneseno: rezultati, greske });
+    await saveJson(NALOZI_KEY, nalozi);
+    res.json({ ok: true, uneseno: rezultati, greske });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // --- Upload CSV skenova (zamjenjuje trenutni skup skenova cijelim novim izvozom) ---
-router.post('/api/skenovi', upload.single('file'), (req, res) => {
+router.post('/api/skenovi', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nema poslane CSV datoteke.' });
   try {
     const { byKey, skippedRows, totalRows, otherFormats } = parseSkenoviCsv(req.file.buffer);
@@ -73,7 +54,7 @@ router.post('/api/skenovi', upload.single('file'), (req, res) => {
       uniquePositions: Object.keys(byKey).length,
       otherFormats
     };
-    saveJson(SKENOVI_FILE, { byKey, meta });
+    await saveJson(SKENOVI_KEY, { byKey, meta });
     res.json({ ok: true, meta });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -81,21 +62,29 @@ router.post('/api/skenovi', upload.single('file'), (req, res) => {
 });
 
 // --- Status: spoji naloge + skenove ---
-router.get('/api/status', (req, res) => {
-  const nalozi = loadNalozi();
-  const skenoviData = loadSkenovi();
-  const status = computeStatus(nalozi, skenoviData.byKey || {});
-  res.json({ nalozi: status, skenoviMeta: skenoviData.meta || null });
+router.get('/api/status', async (req, res) => {
+  try {
+    const nalozi = await loadNalozi();
+    const skenoviData = await loadSkenovi();
+    const status = computeStatus(nalozi, skenoviData.byKey || {});
+    res.json({ nalozi: status, skenoviMeta: skenoviData.meta || null });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // --- Obriši jedan radni nalog ---
-router.delete('/api/nalozi/:nalogBase', (req, res) => {
-  const nalozi = loadNalozi();
-  const key = req.params.nalogBase.toUpperCase();
-  if (!nalozi[key]) return res.status(404).json({ error: 'Nalog nije pronađen.' });
-  delete nalozi[key];
-  saveJson(NALOZI_FILE, nalozi);
-  res.json({ ok: true });
+router.delete('/api/nalozi/:nalogBase', async (req, res) => {
+  try {
+    const nalozi = await loadNalozi();
+    const key = req.params.nalogBase.toUpperCase();
+    if (!nalozi[key]) return res.status(404).json({ error: 'Nalog nije pronađen.' });
+    delete nalozi[key];
+    await saveJson(NALOZI_KEY, nalozi);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 function toCsvValue(v) {
@@ -108,13 +97,13 @@ function toCsvValue(v) {
 }
 
 function statusToMissingCsv(statusList) {
-  const header = ['Radni nalog', 'Projekt', 'Item', 'Part Number', 'Opis', 'Kolicina', 'UOM'];
+  const header = ['Radni nalog', 'Projekt', 'Item', 'Part Number', 'Opis', 'Finishing', 'Kolicina', 'UOM'];
   const lines = [header.join(',')];
   for (const nalog of statusList) {
     for (const it of nalog.items) {
       if (it.skenirano) continue;
       lines.push([
-        nalog.nalogPuni, nalog.projekt, it.item, it.partNumber, it.description, it.qty, it.uom
+        nalog.nalogPuni, nalog.projekt, it.item, it.partNumber, it.description, it.finishing, it.qty, it.uom
       ].map(toCsvValue).join(','));
     }
   }
@@ -122,27 +111,35 @@ function statusToMissingCsv(statusList) {
 }
 
 // --- CSV izvoz neskeniranih pozicija za jedan nalog ---
-router.get('/api/export/:nalogBase.csv', (req, res) => {
-  const nalozi = loadNalozi();
-  const skenoviData = loadSkenovi();
-  const key = req.params.nalogBase.toUpperCase();
-  const status = computeStatus(nalozi, skenoviData.byKey || {}).filter(n => n.nalogBase === key);
-  if (status.length === 0) return res.status(404).send('Nalog nije pronađen.');
-  const csv = statusToMissingCsv(status);
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${key}_neskenirano.csv"`);
-  res.send('\uFEFF' + csv); // BOM radi ispravnog prikaza dijakritika u Excelu
+router.get('/api/export/:nalogBase.csv', async (req, res) => {
+  try {
+    const nalozi = await loadNalozi();
+    const skenoviData = await loadSkenovi();
+    const key = req.params.nalogBase.toUpperCase();
+    const status = computeStatus(nalozi, skenoviData.byKey || {}).filter(n => n.nalogBase === key);
+    if (status.length === 0) return res.status(404).send('Nalog nije pronađen.');
+    const csv = statusToMissingCsv(status);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${key}_neskenirano.csv"`);
+    res.send('\uFEFF' + csv); // BOM radi ispravnog prikaza dijakritika u Excelu
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
 });
 
 // --- CSV izvoz svih neskeniranih pozicija ---
-router.get('/api/export-all.csv', (req, res) => {
-  const nalozi = loadNalozi();
-  const skenoviData = loadSkenovi();
-  const status = computeStatus(nalozi, skenoviData.byKey || {});
-  const csv = statusToMissingCsv(status);
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="sve_neskenirano.csv"');
-  res.send('\uFEFF' + csv);
+router.get('/api/export-all.csv', async (req, res) => {
+  try {
+    const nalozi = await loadNalozi();
+    const skenoviData = await loadSkenovi();
+    const status = computeStatus(nalozi, skenoviData.byKey || {});
+    const csv = statusToMissingCsv(status);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="sve_neskenirano.csv"');
+    res.send('\uFEFF' + csv);
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
 });
 
 module.exports = router;

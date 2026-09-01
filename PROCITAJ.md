@@ -21,6 +21,42 @@ gotovosti i CSV izvozom nedostajućih pozicija.
 - CSV se ažurira punom zamjenom pri svakom uploadu — očekuje se da uvijek
   uploadaš najnoviji **puni** izvoz skenova, a ne samo nove retke.
 
+## Spremanje podataka — Supabase (trajno, umjesto privremenog diska)
+
+Aplikacija sad podatke sprema u Supabase, pa preživljavaju restart i
+redeploy Render servisa (više ne treba ponovno uploadati naloge/CSV
+nakon svakog redeploya).
+
+### 1. Napravi tablicu u Supabaseu
+
+U svom Supabase projektu: **SQL Editor → New query**, zalijepi sadržaj
+datoteke `supabase_setup.sql` (iz ovog projekta) i klikni **Run**.
+Ovo napravi jednu jednostavnu tablicu `kv_store` u koju se sprema sve.
+
+### 2. Pronađi svoj URL i Service Role ključ
+
+U Supabase dashboardu: **Project Settings → API**.
+- **Project URL** (izgleda kao `https://xxxxx.supabase.co`)
+- **service_role key** (u sekciji "Project API keys" — NE "anon public"
+  ključ, nego "service_role"; taj ključ ima puni pristup i ne smije
+  nikad završiti u frontend kodu ili na GitHubu, samo kao Render
+  environment varijabla)
+
+### 3. Postavi ih kao environment varijable na Renderu
+
+Render dashboard → tvoj servis → **Environment** → **Add Environment
+Variable**, dodaj:
+- `SUPABASE_URL` = tvoj Project URL
+- `SUPABASE_SERVICE_KEY` = tvoj service_role ključ
+
+Spremi — Render će sam redeployati servis s novim varijablama.
+
+### Lokalno testiranje sa Supabaseom
+
+Kopiraj `.env.example` u `.env` (u istoj mapi), upiši svoje stvarne
+vrijednosti u `.env`, pa pokreni `node server.js`. Datoteka `.env` se
+ne smije commitati na GitHub (već je u `.gitignore`).
+
 ## 1. Testiranje lokalno (preporučeno prije deploya)
 
 1. Raspakiraj ovaj zip.
@@ -61,15 +97,11 @@ gotovosti i CSV izvozom nedostajućih pozicija.
    vikend-raspored, ali ne dijeli s njim ništa (drugi kod, drugi
    repo, drugi Render servis).
 
-## Važna napomena — Render free plan
+## Važna napomena — spremanje podataka
 
-Isto kao kod vikend-rasporeda: disk na Render free planu je privremen.
-Kod restarta ili redeploya servisa, uploadani radni nalozi i skenovi
-(spremljeni u `data/nalozi.json` i `data/skenovi.json`) se gube. Nakon
-svakog restarta/redeploya trebat ćeš ponovno uploadati radne naloge i
-zadnji CSV izvoz skenova. Ako ovo postane gnjavaža, rješenje je prelazak
-na plaćeni Render plan s trajnim diskom — javi se ako želiš da to
-sredimo.
+Otkad je aplikacija spojena na Supabase (vidi sekciju gore), podaci se
+čuvaju trajno i preživljavaju restart/redeploy Render servisa — više
+ne treba ponovno uploadati naloge i CSV nakon svake promjene koda.
 
 ## Struktura datoteka
 
@@ -78,9 +110,11 @@ skeniranje-app/
   server.js              - pokretanje aplikacije (lokalno i na Renderu)
   routes/skeniranje.js    - API rute (upload, status, CSV izvoz)
   lib/parse.js             - parsiranje Excela i CSV-a, logika spajanja
+  lib/store.js              - spremanje/čitanje podataka iz Supabasea
   public/skeniranje.html   - sučelje
   public/skeniranje.js     - JS logika sučelja
-  data/                    - tu se spremaju uploadani podaci (JSON)
+  supabase_setup.sql        - SQL za napraviti tablicu u Supabaseu
+  .env.example               - predložak za lokalne environment varijable
 ```
 
 ## Kasnija promjena koda

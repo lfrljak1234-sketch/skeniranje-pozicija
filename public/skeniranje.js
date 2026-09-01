@@ -63,6 +63,23 @@ async function refresh() {
   render();
 }
 
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+function colorCellHtml(it) {
+  const label = it.finishing ? escapeHtml(it.finishing) : 'Nepoznato';
+  if (it.colorHex) {
+    return `<span class="color-swatch" style="background:${it.colorHex}" title="${label}"></span>`;
+  }
+  if (it.finishing) {
+    return `<span class="color-swatch color-unknown" title="${label}">?</span>`;
+  }
+  return '';
+}
+
 function render() {
   const onlyMissing = document.getElementById('onlyMissing').checked;
   const root = document.getElementById('nalozi');
@@ -105,6 +122,7 @@ function render() {
         <td>${it.item}</td>
         <td>${it.partNumber}</td>
         <td>${it.description}</td>
+        <td>${colorCellHtml(it)}</td>
         <td>${it.qty ?? ''}</td>
         <td class="status">${it.skenirano
           ? `<span class="badge ok">skenirano</span>`
@@ -113,12 +131,12 @@ function render() {
         <td>${it.zadnjiSken || ''}</td>
       </tr>
     `).join('');
-    if (!rows) rows = '<tr><td colspan="7" class="muted">Sve pozicije skenirane.</td></tr>';
+    if (!rows) rows = '<tr><td colspan="8" class="muted">Sve pozicije skenirane.</td></tr>';
 
     body.innerHTML = `
       <table>
         <thead><tr>
-          <th>Item</th><th>Part Number</th><th>Opis</th><th>Kol.</th><th>Status</th><th># skena</th><th>Zadnji sken</th>
+          <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># skena</th><th>Zadnji sken</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
