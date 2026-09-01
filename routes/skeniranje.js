@@ -97,13 +97,13 @@ function toCsvValue(v) {
 }
 
 function statusToMissingCsv(statusList) {
-  const header = ['Radni nalog', 'Projekt', 'Item', 'Part Number', 'Opis', 'Finishing', 'Kolicina', 'UOM'];
+  const header = ['Radni nalog', 'Projekt', 'Item', 'Part Number', 'Opis', 'Finishing', 'Boja', 'Kolicina', 'UOM'];
   const lines = [header.join(',')];
   for (const nalog of statusList) {
     for (const it of nalog.items) {
       if (it.skenirano) continue;
       lines.push([
-        nalog.nalogPuni, nalog.projekt, it.item, it.partNumber, it.description, it.finishing, it.qty, it.uom
+        nalog.nalogPuni, nalog.projekt, it.item, it.partNumber, it.description, it.finishing, it.colorName, it.qty, it.uom
       ].map(toCsvValue).join(','));
     }
   }

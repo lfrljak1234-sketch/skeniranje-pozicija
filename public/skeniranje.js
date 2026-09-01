@@ -70,12 +70,13 @@ function escapeHtml(s) {
 }
 
 function colorCellHtml(it) {
-  const label = it.finishing ? escapeHtml(it.finishing) : 'Nepoznato';
-  if (it.colorHex) {
-    return `<span class="color-swatch" style="background:${it.colorHex}" title="${label}"></span>`;
+  const label = it.finishing ? escapeHtml(it.finishing) : '';
+  const name = it.colorName ? escapeHtml(it.colorName) : '';
+  if (name) {
+    return `<span class="color-cell" title="${label}">${name}</span>`;
   }
   if (it.finishing) {
-    return `<span class="color-swatch color-unknown" title="${label}">?</span>`;
+    return `<span class="color-cell" title="${label}">nepoznato</span>`;
   }
   return '';
 }
