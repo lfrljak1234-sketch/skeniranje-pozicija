@@ -70,15 +70,8 @@ function escapeHtml(s) {
 }
 
 function colorCellHtml(it) {
-  const label = it.finishing ? escapeHtml(it.finishing) : '';
-  const name = it.colorName ? escapeHtml(it.colorName) : '';
-  if (name) {
-    return `<span class="color-cell" title="${label}">${name}</span>`;
-  }
-  if (it.finishing) {
-    return `<span class="color-cell" title="${label}">nepoznato</span>`;
-  }
-  return '';
+  const text = it.finishing ? escapeHtml(it.finishing) : 'nepoznato';
+  return `<span class="color-cell" title="${text}">${text}</span>`;
 }
 
 function statusBadgeHtml(it) {
