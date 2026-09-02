@@ -51,15 +51,28 @@ setupDrop('boxSkenovi', 'inputSkenovi', async (files) => {
 
 document.getElementById('onlyMissing').addEventListener('change', render);
 
-async function refresh() {
-  const r = await fetch(API + '/status');
+function refresh() {
+  return refreshInternal(false);
+}
+
+async function refreshInternal(trelloRefresh) {
+  const r = await fetch(API + '/status' + (trelloRefresh ? '?trelloRefresh=1' : ''));
   const data = await r.json();
   lastStatus = data.nalozi;
   const meta = data.skenoviMeta;
   const globalEl = document.getElementById('globalStatus');
-  globalEl.textContent = meta
+  const parts = [];
+  parts.push(meta
     ? `Skenovi učitani iz "${meta.sourceFile}" (${new Date(meta.uploadedAt).toLocaleString('hr-HR')})`
-    : 'Skenovi još nisu uploadani.';
+    : 'Skenovi još nisu uploadani.');
+  if (data.trelloInfo && data.trelloInfo.configured) {
+    if (data.trelloInfo.ok) {
+      parts.push(`Trello CNC podaci osvježeni ${new Date(data.trelloInfo.cachedAt).toLocaleTimeString('hr-HR')}`);
+    } else {
+      parts.push(`Trello greška: ${data.trelloInfo.error}`);
+    }
+  }
+  globalEl.textContent = parts.join(' · ');
   render();
 }
 
@@ -85,6 +98,13 @@ function statusBadgeHtml(it) {
   return `<span class="badge miss">nije skenirano</span>`;
 }
 
+function cncBadgeHtml(it) {
+  if (it.cncGotovo === null || it.cncGotovo === undefined) return '<span class="muted">—</span>';
+  return it.cncGotovo
+    ? '<span class="badge ok">gotovo</span>'
+    : '<span class="badge miss">u tijeku</span>';
+}
+
 function render() {
   const onlyMissing = document.getElementById('onlyMissing').checked;
   const root = document.getElementById('nalozi');
@@ -102,10 +122,13 @@ function render() {
     const header = document.createElement('div');
     header.className = 'nalog-header';
     const partialNote = nalog.partial ? ` <span class="muted">(${nalog.partial} djelomično)</span>` : '';
+    const trelloNote = nalog.trelloCard
+      ? ` <span class="muted">· CNC stroj: ${escapeHtml(nalog.trelloCard.machine || '?')}</span>`
+      : '';
     header.innerHTML = `
       <div>
         <h2>${nalog.nalogPuni} ${nalog.projekt ? '<span class="muted">— ' + nalog.projekt + '</span>' : ''}</h2>
-        <div class="muted">${nalog.opis || ''}</div>
+        <div class="muted">${nalog.opis || ''}${trelloNote}</div>
       </div>
       <div class="progress-wrap">
         <span>${nalog.done}/${nalog.total}${partialNote}</span>
@@ -134,14 +157,16 @@ function render() {
         <td>${it.komadaSkenirano || ''}</td>
         <td>${(it.stanice || []).join(', ')}</td>
         <td>${it.zadnjiSken || ''}</td>
+        <td>${escapeHtml(it.cncStroj || '')}</td>
+        <td>${cncBadgeHtml(it)}</td>
       </tr>
     `).join('');
-    if (!rows) rows = '<tr><td colspan="9" class="muted">Sve pozicije skenirane.</td></tr>';
+    if (!rows) rows = '<tr><td colspan="11" class="muted">Sve pozicije skenirane.</td></tr>';
 
     body.innerHTML = `
       <table>
         <thead><tr>
-          <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># komada skenirano</th><th>Stanica</th><th>Zadnji sken</th>
+          <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># komada skenirano</th><th>Stanica</th><th>Zadnji sken</th><th>CNC stroj</th><th>CNC</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
