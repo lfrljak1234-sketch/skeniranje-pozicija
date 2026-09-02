@@ -105,6 +105,24 @@ function cncBadgeHtml(it) {
     : '<span class="badge miss">u tijeku</span>';
 }
 
+function techStepsHtml(it) {
+  if (!it.techSteps || it.techSteps.length === 0) return '';
+  return it.techSteps.map(s => {
+    const total = it.qty;
+    const done = s.gotovoKolicina;
+    let cls = 'step-pending';
+    let text = escapeHtml(s.naziv);
+    if (done != null && total != null) {
+      cls = done >= total ? 'step-done' : (done > 0 ? 'step-partial' : 'step-pending');
+      text += ` ${done}/${total}`;
+    } else if (done != null) {
+      cls = 'step-partial';
+      text += ` ${done}`;
+    }
+    return `<span class="step-chip ${cls}">${text}</span>`;
+  }).join(' ');
+}
+
 function render() {
   const onlyMissing = document.getElementById('onlyMissing').checked;
   const root = document.getElementById('nalozi');
@@ -159,14 +177,15 @@ function render() {
         <td>${it.zadnjiSken || ''}</td>
         <td>${escapeHtml(it.cncStroj || '')}</td>
         <td>${cncBadgeHtml(it)}</td>
+        <td>${techStepsHtml(it)}</td>
       </tr>
     `).join('');
-    if (!rows) rows = '<tr><td colspan="11" class="muted">Sve pozicije skenirane.</td></tr>';
+    if (!rows) rows = '<tr><td colspan="12" class="muted">Sve pozicije skenirane.</td></tr>';
 
     body.innerHTML = `
       <table>
         <thead><tr>
-          <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># komada skenirano</th><th>Stanica</th><th>Zadnji sken</th><th>CNC stroj</th><th>CNC</th>
+          <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># komada skenirano</th><th>Stanica</th><th>Zadnji sken</th><th>CNC stroj</th><th>CNC</th><th>Koraci proizvodnje</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>

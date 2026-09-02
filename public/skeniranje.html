@@ -51,6 +51,10 @@
   input[type=checkbox] { transform: scale(1.1); margin-right: 4px; }
   #globalStatus { font-size: 0.85rem; color: var(--muted); }
   .color-cell { cursor: help; white-space: nowrap; }
+  .step-chip { display: inline-block; padding: 2px 6px; border-radius: 8px; font-size: 0.75rem; margin: 1px; white-space: nowrap; }
+  .step-chip.step-done { background: var(--ok-bg); color: var(--ok); }
+  .step-chip.step-partial { background: var(--partial-bg); color: var(--partial); }
+  .step-chip.step-pending { background: #eee; color: #777; }
 </style>
 </head>
 <body>

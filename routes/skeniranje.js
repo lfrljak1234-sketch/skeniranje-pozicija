@@ -99,8 +99,16 @@ function toCsvValue(v) {
   return s;
 }
 
+function stepsToText(techSteps, qty) {
+  if (!techSteps || techSteps.length === 0) return '';
+  return techSteps.map(s => {
+    const done = s.gotovoKolicina != null ? s.gotovoKolicina : 0;
+    return `${s.naziv} ${done}/${qty ?? '?'}`;
+  }).join('; ');
+}
+
 function statusToMissingCsv(statusList) {
-  const header = ['Radni nalog', 'Projekt', 'Item', 'Part Number', 'Opis', 'Finishing', 'Boja', 'Kolicina', 'Skenirano komada', 'Status', 'Stanica', 'CNC stroj', 'CNC gotovo', 'UOM'];
+  const header = ['Radni nalog', 'Projekt', 'Item', 'Part Number', 'Opis', 'Finishing', 'Boja', 'Kolicina', 'Skenirano komada', 'Status', 'Stanica', 'CNC stroj', 'CNC gotovo', 'Koraci proizvodnje', 'UOM'];
   const lines = [header.join(',')];
   for (const nalog of statusList) {
     for (const it of nalog.items) {
@@ -109,7 +117,8 @@ function statusToMissingCsv(statusList) {
       const cncText = it.cncGotovo === null || it.cncGotovo === undefined ? '' : (it.cncGotovo ? 'da' : 'ne');
       lines.push([
         nalog.nalogPuni, nalog.projekt, it.item, it.partNumber, it.description, it.finishing, it.colorName,
-        it.qty, it.komadaSkenirano, statusText, (it.stanice || []).join('; '), it.cncStroj || '', cncText, it.uom
+        it.qty, it.komadaSkenirano, statusText, (it.stanice || []).join('; '), it.cncStroj || '', cncText,
+        stepsToText(it.techSteps, it.qty), it.uom
       ].map(toCsvValue).join(','));
     }
   }
