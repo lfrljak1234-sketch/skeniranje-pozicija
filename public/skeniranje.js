@@ -123,7 +123,7 @@ function render() {
     header.className = 'nalog-header';
     const partialNote = nalog.partial ? ` <span class="muted">(${nalog.partial} djelomično)</span>` : '';
     const trelloNote = nalog.trelloCard
-      ? ` <span class="muted">· CNC stroj: ${escapeHtml(nalog.trelloCard.machine || '?')}</span>`
+      ? ` <span class="muted">· CNC strojevi: ${escapeHtml((nalog.trelloCard.machines || []).join(', ') || '?')} (${nalog.trelloCard.matchedCards} kartice)</span>`
       : '';
     header.innerHTML = `
       <div>
