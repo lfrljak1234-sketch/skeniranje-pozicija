@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { parseNalogWorkbook, parseSkenoviCsv, computeStatus } = require('../lib/parse');
+const { parseNalogWorkbook, parseSkenoviCsv, computeStatus, applyProductionPlanStatus } = require('../lib/parse');
 const { loadJson, saveJson } = require('../lib/store');
 const { enrichWithTrello } = require('../lib/trello');
 
@@ -70,6 +70,7 @@ router.get('/api/status', async (req, res) => {
     const status = computeStatus(nalozi, skenoviData.byKey || {});
     const forceRefresh = req.query.trelloRefresh === '1';
     const { trelloInfo } = await enrichWithTrello(status, forceRefresh);
+    applyProductionPlanStatus(status); // mora ići NAKON Trello obogaćivanja (koristi cncGotovo)
     res.json({ nalozi: status, skenoviMeta: skenoviData.meta || null, trelloInfo });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -152,6 +153,7 @@ router.get('/api/export-all.csv', async (req, res) => {
     const skenoviData = await loadSkenovi();
     const status = computeStatus(nalozi, skenoviData.byKey || {});
     await enrichWithTrello(status, false);
+    applyProductionPlanStatus(status);
     const csv = statusToMissingCsv(status);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="sve_neskenirano.csv"');

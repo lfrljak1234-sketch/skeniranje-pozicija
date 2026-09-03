@@ -114,10 +114,10 @@ function cncBadgeHtml(it) {
     : '<span class="badge miss">u tijeku</span>';
 }
 
-function techStepsHtml(it) {
+function techStepsHtml(it, qtyOverride) {
   if (!it.techSteps || it.techSteps.length === 0) return '';
+  const total = qtyOverride !== undefined ? qtyOverride : it.qty;
   return it.techSteps.map(s => {
-    const total = it.qty;
     const done = s.gotovoKolicina;
     let cls = 'step-pending';
     let text = escapeHtml(s.naziv);
@@ -163,13 +163,16 @@ function productionPlanSection(nalog, search, onlyMissing) {
           ? `<span class="badge partial">djelomično (${pe.skenirano}/${pe.total ?? '?'})</span>`
           : '<span class="badge miss">nije skenirano</span>')}
       </td>
+      <td>${escapeHtml(pe.cncStroj || '')}</td>
+      <td>${cncBadgeHtml(pe)}</td>
+      <td>${techStepsHtml(pe, pe.total)}</td>
     </tr>
   `).join('');
-  if (!rows) rows = '<tr><td colspan="5" class="muted">Nema pozicija za prikaz.</td></tr>';
+  if (!rows) rows = '<tr><td colspan="8" class="muted">Nema pozicija za prikaz.</td></tr>';
 
   const table = document.createElement('table');
   table.innerHTML = `
-    <thead><tr><th>Part Number</th><th>Opis</th><th>Ukupno</th><th>Skenirano</th><th>Status</th></tr></thead>
+    <thead><tr><th>Part Number</th><th>Opis</th><th>Ukupno</th><th>Skenirano</th><th>Status</th><th>CNC stroj</th><th>CNC</th><th>Koraci proizvodnje</th></tr></thead>
     <tbody>${rows}</tbody>
   `;
   wrap.appendChild(table);
