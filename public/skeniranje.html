@@ -55,6 +55,8 @@
   .step-chip.step-done { background: var(--ok-bg); color: var(--ok); }
   .step-chip.step-partial { background: var(--partial-bg); color: var(--partial); }
   .step-chip.step-pending { background: #eee; color: #777; }
+  .plan-section { margin-top: 16px; padding-top: 12px; border-top: 2px dashed var(--border); }
+  .plan-title { font-weight: 600; margin-bottom: 8px; color: #444; }
 </style>
 </head>
 <body>
@@ -83,7 +85,8 @@
 <div class="toolbar">
   <button onclick="refreshInternal(true)">Osvježi prikaz</button>
   <a class="btn secondary" href="/api/export-all.csv">Izvezi sve neskenirano (CSV)</a>
-  <label style="margin-left:auto;"><input type="checkbox" id="onlyMissing"> Prikaži samo neskenirane pozicije</label>
+  <input type="text" id="searchInput" placeholder="Pretraži šifru ili opis..." style="flex:1; min-width:180px; padding:6px 10px; border:1px solid var(--border); border-radius:6px;">
+  <label><input type="checkbox" id="onlyMissing"> Prikaži samo neskenirane pozicije</label>
 </div>
 <div id="globalStatus"></div>
 
