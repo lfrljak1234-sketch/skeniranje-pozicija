@@ -108,16 +108,18 @@ function stepsToText(techSteps, qty) {
 }
 
 function statusToMissingCsv(statusList) {
-  const header = ['Radni nalog', 'Projekt', 'Item', 'Part Number', 'Opis', 'Finishing', 'Boja', 'Kolicina', 'Skenirano komada', 'Status', 'Stanica', 'CNC stroj', 'CNC gotovo', 'Koraci proizvodnje', 'UOM'];
+  const header = ['Radni nalog', 'Projekt', 'Item', 'Part Number', 'Opis', 'Finishing', 'Boja', 'Kolicina', 'Skenirano komada', 'Status', 'Prije obrade (NS)', 'Nakon obrade (RN)', 'Stanica', 'CNC stroj', 'CNC gotovo', 'Koraci proizvodnje', 'UOM'];
   const lines = [header.join(',')];
   for (const nalog of statusList) {
     for (const it of nalog.items) {
       if (it.statusSkeniranja === 'potpuno') continue;
       const statusText = it.statusSkeniranja === 'djelomicno' ? 'djelomicno' : 'nije skenirano';
       const cncText = it.cncGotovo === null || it.cncGotovo === undefined ? '' : (it.cncGotovo ? 'da' : 'ne');
+      const prijeText = it.faze ? `${it.faze.prijeObrade.komada}/${it.qty ?? '?'} (${it.faze.prijeObrade.status})` : '';
+      const nakonText = it.faze ? `${it.faze.nakonObrade.komada}/${it.qty ?? '?'} (${it.faze.nakonObrade.status})` : '';
       lines.push([
         nalog.nalogPuni, nalog.projekt, it.item, it.partNumber, it.description, it.finishing, it.colorName,
-        it.qty, it.komadaSkenirano, statusText, (it.stanice || []).join('; '), it.cncStroj || '', cncText,
+        it.qty, it.komadaSkenirano, statusText, prijeText, nakonText, (it.stanice || []).join('; '), it.cncStroj || '', cncText,
         stepsToText(it.techSteps, it.qty), it.uom
       ].map(toCsvValue).join(','));
     }

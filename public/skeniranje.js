@@ -88,6 +88,14 @@ function colorCellHtml(it) {
 }
 
 function statusBadgeHtml(it) {
+  if (it.faze) {
+    // Fin/soffit pozicija - prikaži obje faze eksplicitno
+    const p = it.faze.prijeObrade, n = it.faze.nakonObrade;
+    const cls = s => s === 'potpuno' ? 'ok' : (s === 'djelomicno' ? 'partial' : 'miss');
+    const kol = it.qty != null ? '/' + it.qty : '';
+    return `<span class="badge ${cls(p.status)}" title="Prije obrade (NS)">prije: ${p.komada}${kol}</span> ` +
+           `<span class="badge ${cls(n.status)}" title="Nakon obrade (RN)">nakon: ${n.komada}${kol}</span>`;
+  }
   if (it.statusSkeniranja === 'potpuno') {
     return `<span class="badge ok">skenirano</span>`;
   }
