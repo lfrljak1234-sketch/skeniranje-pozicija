@@ -147,6 +147,26 @@ router.get('/api/status', async (req, res) => {
   }
 });
 
+// --- Puni detalj za JEDAN nalog (klik na redak u sažetku) ---
+router.get('/api/status/:nalogBase', async (req, res) => {
+  try {
+    const nalozi = await loadNalozi();
+    const skenoviData = await loadSkenovi();
+    const dualPhaseKeywords = await loadDualPhaseKeywords();
+    const key = req.params.nalogBase.toUpperCase();
+
+    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords);
+    await enrichWithTrello(status, false);
+    applyProductionPlanStatus(status);
+
+    const nalog = status.find(n => n.nalogBase === key);
+    if (!nalog) return res.status(404).json({ error: 'Nalog nije pronađen.' });
+    res.json({ nalog });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // --- Obriši SVE naloge odjednom ---
 router.delete('/api/nalozi', async (req, res) => {
   try {

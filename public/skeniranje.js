@@ -283,7 +283,7 @@ function renderSummary() {
 
   let rows = onlyMissing ? lastStatus.filter(n => n.done < n.total) : lastStatus;
   const rowsHtml = rows.map(n => `
-    <tr class="${n.done >= n.total ? 'done' : (n.partial > 0 || n.done > 0 ? 'partial' : 'missing')}">
+    <tr class="clickable-row ${n.done >= n.total ? 'done' : (n.partial > 0 || n.done > 0 ? 'partial' : 'missing')}" data-nalog="${n.nalogBase}">
       <td>${escapeHtml(n.nalogPuni)}</td>
       <td>${escapeHtml(n.projekt || '')}</td>
       <td>${escapeHtml(n.opis || '')}</td>
@@ -291,15 +291,17 @@ function renderSummary() {
       <td>${n.done}/${n.total}${n.partial ? ` (${n.partial} djelomično)` : ''}</td>
       <td>${n.percent}%</td>
       <td>${n.trelloCard ? escapeHtml((n.trelloCard.machines || []).join(', ')) : ''}</td>
-      <td><a class="btn secondary" href="/api/export/${n.nalogBase}.csv">CSV</a> <a class="btn secondary" href="/api/print/${n.nalogBase}" target="_blank">Ispis</a> <button class="danger" onclick="obrisiNalog('${n.nalogBase}')">Obriši</button></td>
+      <td><a class="btn secondary" href="/api/export/${n.nalogBase}.csv" onclick="event.stopPropagation()">CSV</a> <a class="btn secondary" href="/api/print/${n.nalogBase}" target="_blank" onclick="event.stopPropagation()">Ispis</a> <button class="danger" onclick="event.stopPropagation(); obrisiNalog('${n.nalogBase}')">Obriši</button></td>
     </tr>
+    <tr class="detail-row" id="detail-${n.nalogBase}" style="display:none;"><td colspan="8"></td></tr>
   `).join('');
 
   root.innerHTML = `
     <div class="card muted" style="margin-bottom:10px;">
       Prikazan je sažetak (${lastStatus.length} naloga) bez pojedinačnih pozicija — velik broj naloga se ne
       iscrtava odjednom u punom detalju jer bi to usporilo browser. Upiši šifru ili opis u polje za pretragu
-      gore da vidiš pune pozicije za konkretan nalog.
+      gore da vidiš pune pozicije za konkretan nalog, ili <strong>klikni na redak</strong> da razotkriješ
+      pozicije baš tog naloga.
     </div>
     <table>
       <thead><tr>
@@ -308,10 +310,123 @@ function renderSummary() {
       <tbody>${rowsHtml}</tbody>
     </table>
   `;
+
+  root.querySelectorAll('tr.clickable-row').forEach(tr => {
+    tr.addEventListener('click', () => toggleNalogDetail(tr.dataset.nalog));
+  });
+}
+
+async function toggleNalogDetail(nalogBase) {
+  const detailRow = document.getElementById('detail-' + nalogBase);
+  const cell = detailRow.querySelector('td');
+
+  if (detailRow.style.display !== 'none') {
+    detailRow.style.display = 'none';
+    return;
+  }
+
+  detailRow.style.display = 'table-row';
+  cell.innerHTML = '<span class="muted">Učitavam pozicije...</span>';
+
+  try {
+    const r = await fetch(API + '/status/' + nalogBase);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Greška.');
+    cell.innerHTML = '';
+    cell.appendChild(renderNalogCard(data.nalog, '', { onlyMissing: document.getElementById('onlyMissing').checked, alwaysOpen: true }));
+  } catch (e) {
+    cell.innerHTML = '<span class="muted">Greška: ' + escapeHtml(e.message) + '</span>';
+  }
+}
+
+function renderNalogCard(nalog, search, opts) {
+  const onlyMissing = (opts && opts.onlyMissing) !== undefined
+    ? opts.onlyMissing
+    : document.getElementById('onlyMissing').checked;
+  const alwaysOpen = !!(opts && opts.alwaysOpen);
+
+  function matchesSearch(it) {
+    if (!search) return true;
+    return (it.partNumber || '').toLowerCase().includes(search) ||
+           (it.description || '').toLowerCase().includes(search);
+  }
+
+  const searchMatchCount = nalog.items.filter(matchesSearch).length;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'nalog-summary';
+
+  const header = document.createElement('div');
+  header.className = 'nalog-header';
+  const partialNote = nalog.partial ? ` <span class="muted">(${nalog.partial} djelomično)</span>` : '';
+  const trelloNote = nalog.trelloCard
+    ? ` <span class="muted">· CNC strojevi: ${escapeHtml((nalog.trelloCard.machines || []).join(', ') || '?')} (${nalog.trelloCard.matchedCards} kartice)</span>`
+    : '';
+  const searchNote = search ? ` <span class="muted">· ${searchMatchCount} pogodaka</span>` : '';
+  header.innerHTML = `
+    <div>
+      <h2>${nalog.nalogPuni} ${nalog.projekt ? '<span class="muted">— ' + nalog.projekt + '</span>' : ''}</h2>
+      <div class="muted">${nalog.opis || ''}${trelloNote}${searchNote}</div>
+    </div>
+    <div class="progress-wrap">
+      <span>${nalog.done}/${nalog.total}${partialNote}</span>
+      <div class="progress-bar"><div class="progress-fill" style="width:${nalog.percent}%"></div></div>
+      <span>${nalog.percent}%</span>
+      <a class="btn secondary" href="/api/export/${nalog.nalogBase}.csv" onclick="event.stopPropagation()">CSV</a>
+      <a class="btn secondary" href="/api/print/${nalog.nalogBase}" target="_blank" onclick="event.stopPropagation()">Ispis</a>
+      <button class="danger" onclick="event.stopPropagation(); obrisiNalog('${nalog.nalogBase}')">Obriši</button>
+    </div>
+  `;
+
+  const body = document.createElement('div');
+  body.className = 'items-body';
+  if (search || alwaysOpen) body.classList.add('open');
+
+  if (!alwaysOpen) {
+    header.addEventListener('click', () => {
+      body.classList.toggle('open');
+    });
+  }
+
+  let items = nalog.items.filter(matchesSearch);
+  if (onlyMissing) items = items.filter(i => i.statusSkeniranja !== 'potpuno');
+  let rows = items.map(it => `
+    <tr class="${it.statusSkeniranja === 'potpuno' ? 'done' : (it.statusSkeniranja === 'djelomicno' ? 'partial' : 'missing')}">
+      <td>${it.item}</td>
+      <td>${it.partNumber}</td>
+      <td>${it.description}</td>
+      <td>${colorCellHtml(it)}</td>
+      <td>${it.qty ?? ''}</td>
+      <td class="status">${statusBadgeHtml(it)}</td>
+      <td>${it.komadaSkenirano || ''}</td>
+      <td>${(it.stanice || []).join(', ')}</td>
+      <td>${it.zadnjiSken || ''}</td>
+      <td>${escapeHtml(it.cncStroj || '')}</td>
+      <td>${cncBadgeHtml(it)}</td>
+      <td>${techStepsHtml(it)}</td>
+    </tr>
+  `).join('');
+  if (!rows) rows = '<tr><td colspan="12" class="muted">Sve pozicije skenirane.</td></tr>';
+
+  body.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># komada skenirano</th><th>Stanica</th><th>Zadnji sken</th><th>CNC stroj</th><th>CNC</th><th>Koraci proizvodnje</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  if (nalog.productionPlanStatus) {
+    body.appendChild(productionPlanSection(nalog, search, onlyMissing));
+  }
+
+  wrap.appendChild(header);
+  wrap.appendChild(body);
+  return wrap;
 }
 
 function renderFull() {
-  const onlyMissing = document.getElementById('onlyMissing').checked;
   const search = document.getElementById('searchInput').value.trim().toLowerCase();
   const root = document.getElementById('nalozi');
   root.innerHTML = '';
@@ -329,90 +444,8 @@ function renderFull() {
     root.appendChild(note);
   }
 
-  function matchesSearch(it) {
-    if (!search) return true;
-    return (it.partNumber || '').toLowerCase().includes(search) ||
-           (it.description || '').toLowerCase().includes(search);
-  }
-
   for (const nalog of lastStatus) {
-    const searchMatchCount = nalog.items.filter(matchesSearch).length;
-    const planMatchCount = nalog.productionPlanStatus
-      ? nalog.productionPlanStatus.filter(pe =>
-          !search ||
-          (pe.partNumber || '').toLowerCase().includes(search) ||
-          (pe.description || '').toLowerCase().includes(search)
-        ).length
-      : 0;
-
-    const wrap = document.createElement('div');
-    wrap.className = 'nalog-summary';
-
-    const header = document.createElement('div');
-    header.className = 'nalog-header';
-    const partialNote = nalog.partial ? ` <span class="muted">(${nalog.partial} djelomično)</span>` : '';
-    const trelloNote = nalog.trelloCard
-      ? ` <span class="muted">· CNC strojevi: ${escapeHtml((nalog.trelloCard.machines || []).join(', ') || '?')} (${nalog.trelloCard.matchedCards} kartice)</span>`
-      : '';
-    const searchNote = search ? ` <span class="muted">· ${searchMatchCount} pogodaka</span>` : '';
-    header.innerHTML = `
-      <div>
-        <h2>${nalog.nalogPuni} ${nalog.projekt ? '<span class="muted">— ' + nalog.projekt + '</span>' : ''}</h2>
-        <div class="muted">${nalog.opis || ''}${trelloNote}${searchNote}</div>
-      </div>
-      <div class="progress-wrap">
-        <span>${nalog.done}/${nalog.total}${partialNote}</span>
-        <div class="progress-bar"><div class="progress-fill" style="width:${nalog.percent}%"></div></div>
-        <span>${nalog.percent}%</span>
-        <a class="btn secondary" href="/api/export/${nalog.nalogBase}.csv" onclick="event.stopPropagation()">CSV</a>
-        <a class="btn secondary" href="/api/print/${nalog.nalogBase}" target="_blank" onclick="event.stopPropagation()">Ispis</a>
-        <button class="danger" onclick="event.stopPropagation(); obrisiNalog('${nalog.nalogBase}')">Obriši</button>
-      </div>
-    `;
-    header.addEventListener('click', () => {
-      body.classList.toggle('open');
-    });
-
-    const body = document.createElement('div');
-    body.className = 'items-body';
-    if (search) body.classList.add('open'); // auto-otvori naloge s pogotkom
-
-    let items = nalog.items.filter(matchesSearch);
-    if (onlyMissing) items = items.filter(i => i.statusSkeniranja !== 'potpuno');
-    let rows = items.map(it => `
-      <tr class="${it.statusSkeniranja === 'potpuno' ? 'done' : (it.statusSkeniranja === 'djelomicno' ? 'partial' : 'missing')}">
-        <td>${it.item}</td>
-        <td>${it.partNumber}</td>
-        <td>${it.description}</td>
-        <td>${colorCellHtml(it)}</td>
-        <td>${it.qty ?? ''}</td>
-        <td class="status">${statusBadgeHtml(it)}</td>
-        <td>${it.komadaSkenirano || ''}</td>
-        <td>${(it.stanice || []).join(', ')}</td>
-        <td>${it.zadnjiSken || ''}</td>
-        <td>${escapeHtml(it.cncStroj || '')}</td>
-        <td>${cncBadgeHtml(it)}</td>
-        <td>${techStepsHtml(it)}</td>
-      </tr>
-    `).join('');
-    if (!rows) rows = '<tr><td colspan="12" class="muted">Sve pozicije skenirane.</td></tr>';
-
-    body.innerHTML = `
-      <table>
-        <thead><tr>
-          <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># komada skenirano</th><th>Stanica</th><th>Zadnji sken</th><th>CNC stroj</th><th>CNC</th><th>Koraci proizvodnje</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `;
-
-    if (nalog.productionPlanStatus) {
-      body.appendChild(productionPlanSection(nalog, search, onlyMissing));
-    }
-
-    wrap.appendChild(header);
-    wrap.appendChild(body);
-    root.appendChild(wrap);
+    root.appendChild(renderNalogCard(nalog, search));
   }
 }
 
