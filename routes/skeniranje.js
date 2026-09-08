@@ -15,11 +15,13 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 
 // presporo i riskiralo limite veličine.
 const SKENOVI_KEY = 'skenovi';
 const DUALPHASE_KEY = 'dvofaznePozicije';
+const PREONLY_KEY = 'samoPrijeObradePozicije';
 const NALOG_PREFIX = 'nalog:';
 
 function loadNalozi() { return loadAllByPrefix(NALOG_PREFIX); }
 function loadSkenovi() { return loadJson(SKENOVI_KEY, { byKey: {}, meta: null }); }
 function loadDualPhaseKeywords() { return loadJson(DUALPHASE_KEY, DEFAULT_DUALPHASE_KEYWORDS); }
+function loadPreOnlyKeywords() { return loadJson(PREONLY_KEY, []); }
 
 // --- Dvofazne oznake (npr. "fin", "soffit") - uredljiv popis koji određuje
 // koje pozicije trebaju sken PRIJE i NAKON CNC obrade da bi bile potpuno
@@ -39,6 +41,29 @@ router.put('/api/dvofazne-oznake', async (req, res) => {
       ? req.body.keywords.map(k => String(k).trim()).filter(Boolean)
       : [];
     await saveJson(DUALPHASE_KEY, keywords);
+    res.json({ ok: true, keywords });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- "Samo prije obrade" oznake - pozicije kojima je dovoljan SAMO sken
+// prije CNC obrade (preko NS-a), bez potrebe za dodatnim skenom nakon. ---
+router.get('/api/samo-prije-oznake', async (req, res) => {
+  try {
+    const keywords = await loadPreOnlyKeywords();
+    res.json({ keywords });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/api/samo-prije-oznake', async (req, res) => {
+  try {
+    const keywords = Array.isArray(req.body.keywords)
+      ? req.body.keywords.map(k => String(k).trim()).filter(Boolean)
+      : [];
+    await saveJson(PREONLY_KEY, keywords);
     res.json({ ok: true, keywords });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -100,9 +125,10 @@ router.get('/api/status', async (req, res) => {
     const nalozi = await loadNalozi();
     const skenoviData = await loadSkenovi();
     const dualPhaseKeywords = await loadDualPhaseKeywords();
+    const preOnlyKeywords = await loadPreOnlyKeywords();
     const search = (req.query.search || '').trim().toLowerCase();
 
-    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords);
+    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords, preOnlyKeywords);
     const forceRefresh = req.query.trelloRefresh === '1';
     const { trelloInfo } = await enrichWithTrello(status, forceRefresh);
     applyProductionPlanStatus(status); // mora ići NAKON Trello obogaćivanja (koristi cncGotovo)
@@ -191,9 +217,10 @@ router.get('/api/status/:nalogBase', async (req, res) => {
     const nalozi = await loadNalozi();
     const skenoviData = await loadSkenovi();
     const dualPhaseKeywords = await loadDualPhaseKeywords();
+    const preOnlyKeywords = await loadPreOnlyKeywords();
     const key = req.params.nalogBase.toUpperCase();
 
-    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords);
+    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords, preOnlyKeywords);
     await enrichWithTrello(status, false);
     applyProductionPlanStatus(status);
 
@@ -271,8 +298,9 @@ router.get('/api/export/:nalogBase.csv', async (req, res) => {
     const nalozi = await loadNalozi();
     const skenoviData = await loadSkenovi();
     const dualPhaseKeywords = await loadDualPhaseKeywords();
+    const preOnlyKeywords = await loadPreOnlyKeywords();
     const key = req.params.nalogBase.toUpperCase();
-    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords).filter(n => n.nalogBase === key);
+    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords, preOnlyKeywords).filter(n => n.nalogBase === key);
     if (status.length === 0) return res.status(404).send('Nalog nije pronađen.');
     await enrichWithTrello(status, false);
     const csv = statusToMissingCsv(status);
@@ -290,7 +318,8 @@ router.get('/api/export-all.csv', async (req, res) => {
     const nalozi = await loadNalozi();
     const skenoviData = await loadSkenovi();
     const dualPhaseKeywords = await loadDualPhaseKeywords();
-    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords);
+    const preOnlyKeywords = await loadPreOnlyKeywords();
+    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords, preOnlyKeywords);
     await enrichWithTrello(status, false);
     applyProductionPlanStatus(status);
     const csv = statusToMissingCsv(status);
@@ -397,8 +426,9 @@ router.get('/api/print/:nalogBase', async (req, res) => {
     const nalozi = await loadNalozi();
     const skenoviData = await loadSkenovi();
     const dualPhaseKeywords = await loadDualPhaseKeywords();
+    const preOnlyKeywords = await loadPreOnlyKeywords();
     const key = req.params.nalogBase.toUpperCase();
-    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords).filter(n => n.nalogBase === key);
+    const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords, preOnlyKeywords).filter(n => n.nalogBase === key);
     if (status.length === 0) return res.status(404).send('Nalog nije pronađen.');
     await enrichWithTrello(status, false);
     applyProductionPlanStatus(status);

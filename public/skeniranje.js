@@ -130,6 +130,78 @@ document.getElementById('dualPhaseInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') dodajDvofaznuOznaku();
 });
 
+// --- "Samo prije obrade" oznake ---
+let preOnlyKeywords = [];
+
+function togglePreOnlyPanel() {
+  const panel = document.getElementById('preOnlyPanel');
+  const showing = panel.style.display !== 'none';
+  if (showing) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  ucitajPreOnlyOznake();
+}
+
+async function ucitajPreOnlyOznake() {
+  const statusEl = document.getElementById('preOnlyStatus');
+  try {
+    const r = await fetch(API + '/samo-prije-oznake');
+    const data = await r.json();
+    preOnlyKeywords = data.keywords || [];
+    renderPreOnlyOznake();
+  } catch (e) {
+    statusEl.textContent = 'Greška pri učitavanju: ' + e.message;
+  }
+}
+
+function renderPreOnlyOznake() {
+  const wrap = document.getElementById('preOnlyTags');
+  wrap.innerHTML = preOnlyKeywords.map((k, i) => `
+    <span class="tag-chip">${escapeHtml(k)} <button onclick="obrisiPreOnlyOznaku(${i})" title="Ukloni">×</button></span>
+  `).join('') || '<span class="muted">Nema oznaka.</span>';
+}
+
+async function spremiPreOnlyOznake() {
+  const statusEl = document.getElementById('preOnlyStatus');
+  statusEl.textContent = 'Spremam...';
+  try {
+    const r = await fetch(API + '/samo-prije-oznake', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords: preOnlyKeywords })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Greška pri spremanju.');
+    statusEl.textContent = 'Spremljeno.';
+    refresh();
+  } catch (e) {
+    statusEl.textContent = 'Greška: ' + e.message;
+  }
+}
+
+function dodajPreOnlyOznaku() {
+  const input = document.getElementById('preOnlyInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (preOnlyKeywords.some(k => k.toLowerCase() === val.toLowerCase())) {
+    input.value = '';
+    return;
+  }
+  preOnlyKeywords.push(val);
+  input.value = '';
+  renderPreOnlyOznake();
+  spremiPreOnlyOznake();
+}
+
+function obrisiPreOnlyOznaku(i) {
+  preOnlyKeywords.splice(i, 1);
+  renderPreOnlyOznake();
+  spremiPreOnlyOznake();
+}
+
+document.getElementById('preOnlyInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') dodajPreOnlyOznaku();
+});
+
 function refresh() {
   return refreshInternal(false);
 }
