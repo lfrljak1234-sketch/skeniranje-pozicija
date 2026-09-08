@@ -163,4 +163,110 @@ router.get('/api/export-all.csv', async (req, res) => {
   }
 });
 
+// --- Ispis: čist, printer-friendly prikaz svih pozicija jednog naloga ---
+function escapeHtmlServer(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+function statusLabel(s) {
+  if (s === 'potpuno') return 'skenirano';
+  if (s === 'djelomicno') return 'djelomično';
+  return 'nije skenirano';
+}
+
+function stepsToPrintText(techSteps, qty) {
+  if (!techSteps || techSteps.length === 0) return '';
+  return techSteps.map(s => `${s.naziv} ${s.gotovoKolicina ?? 0}/${qty ?? '?'}`).join(', ');
+}
+
+function renderPrintPage(nalog) {
+  const rows = nalog.items.map(it => `
+    <tr>
+      <td>${it.item}</td>
+      <td>${escapeHtmlServer(it.partNumber)}</td>
+      <td>${escapeHtmlServer(it.description)}</td>
+      <td>${escapeHtmlServer(it.colorName || '')}</td>
+      <td>${it.qty ?? ''}</td>
+      <td class="${it.statusSkeniranja}">${statusLabel(it.statusSkeniranja)}</td>
+      <td>${it.komadaSkenirano || ''}</td>
+      <td>${escapeHtmlServer(it.cncStroj || '')}</td>
+      <td>${it.cncGotovo === null || it.cncGotovo === undefined ? '' : (it.cncGotovo ? 'gotovo' : 'u tijeku')}</td>
+      <td>${escapeHtmlServer(stepsToPrintText(it.techSteps, it.qty))}</td>
+    </tr>
+  `).join('');
+
+  const planRows = nalog.productionPlanStatus ? nalog.productionPlanStatus.map(pe => `
+    <tr>
+      <td>${escapeHtmlServer(pe.partNumber)}</td>
+      <td>${escapeHtmlServer(pe.description)}</td>
+      <td>${pe.total ?? ''}</td>
+      <td>${pe.skenirano}</td>
+      <td class="${pe.status}">${statusLabel(pe.status)}</td>
+    </tr>
+  `).join('') : '';
+
+  return `<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<title>Ispis - ${escapeHtmlServer(nalog.nalogPuni)}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; margin: 20px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .sub { color: #555; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+  th, td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; }
+  th { background: #f0f0f0; }
+  td.potpuno { color: #1b8a3e; font-weight: bold; }
+  td.djelomicno { color: #b5750a; font-weight: bold; }
+  td.nema { color: #c62828; font-weight: bold; }
+  .print-btn { margin-bottom: 16px; }
+  @media print {
+    .print-btn { display: none; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+  <button class="print-btn" onclick="window.print()">Ispiši</button>
+  <h1>${escapeHtmlServer(nalog.nalogPuni)} ${nalog.projekt ? '— ' + escapeHtmlServer(nalog.projekt) : ''}</h1>
+  <div class="sub">${escapeHtmlServer(nalog.opis || '')} · ${nalog.done}/${nalog.total} pozicija (${nalog.percent}%) · Ispisano ${new Date().toLocaleString('hr-HR')}</div>
+
+  <table>
+    <thead><tr>
+      <th>Item</th><th>Part Number</th><th>Opis</th><th>Boja</th><th>Kol.</th><th>Status</th><th># komada</th><th>CNC stroj</th><th>CNC</th><th>Koraci proizvodnje</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  ${nalog.productionPlanStatus ? `
+  <h2>Plan proizvodnje (ASL)</h2>
+  <table>
+    <thead><tr><th>Part Number</th><th>Opis</th><th>Ukupno</th><th>Skenirano</th><th>Status</th></tr></thead>
+    <tbody>${planRows}</tbody>
+  </table>
+  ` : ''}
+</body>
+</html>`;
+}
+
+router.get('/api/print/:nalogBase', async (req, res) => {
+  try {
+    const nalozi = await loadNalozi();
+    const skenoviData = await loadSkenovi();
+    const key = req.params.nalogBase.toUpperCase();
+    const status = computeStatus(nalozi, skenoviData.byKey || {}).filter(n => n.nalogBase === key);
+    if (status.length === 0) return res.status(404).send('Nalog nije pronađen.');
+    await enrichWithTrello(status, false);
+    applyProductionPlanStatus(status);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(renderPrintPage(status[0]));
+  } catch (e) {
+    res.status(500).send('Greška: ' + e.message);
+  }
+});
+
 module.exports = router;

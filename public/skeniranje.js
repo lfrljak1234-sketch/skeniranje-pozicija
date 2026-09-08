@@ -230,6 +230,7 @@ function render() {
         <div class="progress-bar"><div class="progress-fill" style="width:${nalog.percent}%"></div></div>
         <span>${nalog.percent}%</span>
         <a class="btn secondary" href="/api/export/${nalog.nalogBase}.csv" onclick="event.stopPropagation()">CSV</a>
+        <a class="btn secondary" href="/api/print/${nalog.nalogBase}" target="_blank" onclick="event.stopPropagation()">Ispis</a>
         <button class="danger" onclick="event.stopPropagation(); obrisiNalog('${nalog.nalogBase}')">Obriši</button>
       </div>
     `;
