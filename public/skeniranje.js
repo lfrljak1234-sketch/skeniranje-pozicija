@@ -1,5 +1,8 @@
 const API = '/api';
 let lastStatus = [];
+let lastMode = 'summary';
+let lastMeta = {};
+let searchDebounceTimer = null;
 
 function setupDrop(boxId, inputId, onFiles) {
   const box = document.getElementById(boxId);
@@ -50,7 +53,10 @@ setupDrop('boxSkenovi', 'inputSkenovi', async (files) => {
 });
 
 document.getElementById('onlyMissing').addEventListener('change', render);
-document.getElementById('searchInput').addEventListener('input', render);
+document.getElementById('searchInput').addEventListener('input', () => {
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => refreshInternal(false), 350);
+});
 
 // --- Dvofazne oznake ---
 let dualPhaseKeywords = [];
@@ -129,15 +135,22 @@ function refresh() {
 }
 
 async function refreshInternal(trelloRefresh) {
-  const r = await fetch(API + '/status' + (trelloRefresh ? '?trelloRefresh=1' : ''));
+  const search = document.getElementById('searchInput').value.trim();
+  const params = new URLSearchParams();
+  if (trelloRefresh) params.set('trelloRefresh', '1');
+  if (search) params.set('search', search);
+  const r = await fetch(API + '/status' + (params.toString() ? '?' + params.toString() : ''));
   const data = await r.json();
   lastStatus = data.nalozi;
+  lastMode = data.mode || 'summary';
+  lastMeta = data;
   const meta = data.skenoviMeta;
   const globalEl = document.getElementById('globalStatus');
   const parts = [];
   parts.push(meta
     ? `Skenovi učitani iz "${meta.sourceFile}" (${new Date(meta.uploadedAt).toLocaleString('hr-HR')})`
     : 'Skenovi još nisu uploadani.');
+  parts.push(`${data.totalNalozi} naloga ukupno`);
   if (data.trelloInfo && data.trelloInfo.configured) {
     if (data.trelloInfo.ok) {
       parts.push(`Trello CNC podaci osvježeni ${new Date(data.trelloInfo.cachedAt).toLocaleTimeString('hr-HR')}`);
@@ -252,14 +265,68 @@ function productionPlanSection(nalog, search, onlyMissing) {
 }
 
 function render() {
+  if (lastMode === 'summary') {
+    renderSummary();
+  } else {
+    renderFull();
+  }
+}
+
+function renderSummary() {
+  const onlyMissing = document.getElementById('onlyMissing').checked;
+  const root = document.getElementById('nalozi');
+
+  if (lastStatus.length === 0) {
+    root.innerHTML = '<div class="card muted">Nema još uploadanih radnih naloga.</div>';
+    return;
+  }
+
+  let rows = onlyMissing ? lastStatus.filter(n => n.done < n.total) : lastStatus;
+  const rowsHtml = rows.map(n => `
+    <tr class="${n.done >= n.total ? 'done' : (n.partial > 0 || n.done > 0 ? 'partial' : 'missing')}">
+      <td>${escapeHtml(n.nalogPuni)}</td>
+      <td>${escapeHtml(n.projekt || '')}</td>
+      <td>${escapeHtml(n.opis || '')}</td>
+      <td>${n.format}</td>
+      <td>${n.done}/${n.total}${n.partial ? ` (${n.partial} djelomično)` : ''}</td>
+      <td>${n.percent}%</td>
+      <td>${n.trelloCard ? escapeHtml((n.trelloCard.machines || []).join(', ')) : ''}</td>
+      <td><a class="btn secondary" href="/api/export/${n.nalogBase}.csv">CSV</a> <a class="btn secondary" href="/api/print/${n.nalogBase}" target="_blank">Ispis</a> <button class="danger" onclick="obrisiNalog('${n.nalogBase}')">Obriši</button></td>
+    </tr>
+  `).join('');
+
+  root.innerHTML = `
+    <div class="card muted" style="margin-bottom:10px;">
+      Prikazan je sažetak (${lastStatus.length} naloga) bez pojedinačnih pozicija — velik broj naloga se ne
+      iscrtava odjednom u punom detalju jer bi to usporilo browser. Upiši šifru ili opis u polje za pretragu
+      gore da vidiš pune pozicije za konkretan nalog.
+    </div>
+    <table>
+      <thead><tr>
+        <th>Radni nalog</th><th>Projekt</th><th>Opis</th><th>Format</th><th>Gotovo</th><th>%</th><th>CNC strojevi</th><th></th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  `;
+}
+
+function renderFull() {
   const onlyMissing = document.getElementById('onlyMissing').checked;
   const search = document.getElementById('searchInput').value.trim().toLowerCase();
   const root = document.getElementById('nalozi');
   root.innerHTML = '';
 
   if (lastStatus.length === 0) {
-    root.innerHTML = '<div class="card muted">Nema još uploadanih radnih naloga.</div>';
+    root.innerHTML = `<div class="card muted">Nema pozicija koje odgovaraju pretrazi "${escapeHtml(search)}".</div>`;
     return;
+  }
+
+  if (lastMeta.truncated) {
+    const note = document.createElement('div');
+    note.className = 'card muted';
+    note.style.marginBottom = '10px';
+    note.textContent = `Pronađeno ${lastMeta.totalMatched} naloga s pogotkom, prikazano prvih ${lastStatus.length}. Suzi pretragu za precizniji prikaz.`;
+    root.appendChild(note);
   }
 
   function matchesSearch(it) {
@@ -267,8 +334,6 @@ function render() {
     return (it.partNumber || '').toLowerCase().includes(search) ||
            (it.description || '').toLowerCase().includes(search);
   }
-
-  let anyRendered = false;
 
   for (const nalog of lastStatus) {
     const searchMatchCount = nalog.items.filter(matchesSearch).length;
@@ -279,8 +344,6 @@ function render() {
           (pe.description || '').toLowerCase().includes(search)
         ).length
       : 0;
-    if (search && searchMatchCount === 0 && planMatchCount === 0) continue; // nalog nema nijednu pogodenu poziciju - preskoci
-    anyRendered = true;
 
     const wrap = document.createElement('div');
     wrap.className = 'nalog-summary';
@@ -351,15 +414,25 @@ function render() {
     wrap.appendChild(body);
     root.appendChild(wrap);
   }
-
-  if (!anyRendered) {
-    root.innerHTML = `<div class="card muted">Nema pozicija koje odgovaraju pretrazi "${escapeHtml(search)}".</div>`;
-  }
 }
 
 async function obrisiNalog(nalogBase) {
   if (!confirm(`Obrisati radni nalog ${nalogBase}?`)) return;
   await fetch(API + '/nalozi/' + nalogBase, { method: 'DELETE' });
+  refresh();
+}
+
+async function obrisiSveNaloge() {
+  const potvrda = prompt('Ovo briše SVE naloge (upisane skenove ne dira). Za potvrdu upiši: OBRISI');
+  if (potvrda !== 'OBRISI') return;
+  const globalEl = document.getElementById('globalStatus');
+  globalEl.textContent = 'Brišem sve naloge...';
+  const r = await fetch(API + '/nalozi', { method: 'DELETE' });
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    globalEl.textContent = 'Greška: ' + (data.error || r.statusText);
+    return;
+  }
   refresh();
 }
 

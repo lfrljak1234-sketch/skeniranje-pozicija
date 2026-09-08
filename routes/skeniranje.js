@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const { parseNalogWorkbook, parseSkenoviCsv, computeStatus, applyProductionPlanStatus, DEFAULT_DUALPHASE_KEYWORDS } = require('../lib/parse');
-const { loadJson, saveJson } = require('../lib/store');
+const { loadJson, saveJson, deleteKey, loadAllByPrefix, deleteAllByPrefix } = require('../lib/store');
 const { enrichWithTrello } = require('../lib/trello');
 
 const router = express.Router();
@@ -9,11 +9,15 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 
 
 // Podaci se spremaju u Supabase (tablica kv_store), pa ostaju trajno
 // sačuvani i preživljavaju restart/redeploy Render servisa.
-const NALOZI_KEY = 'nalozi';
+// Svaki radni nalog ide u SVOJ VLASTITI redak (ključ "nalog:{nalogBase}"),
+// ne kao jedan veliki objekt sa svim nalozima - kod tisuća naloga bi
+// učitavanje/prepisivanje jednog golemog bloka kod svakog uploada bilo
+// presporo i riskiralo limite veličine.
 const SKENOVI_KEY = 'skenovi';
 const DUALPHASE_KEY = 'dvofaznePozicije';
+const NALOG_PREFIX = 'nalog:';
 
-function loadNalozi() { return loadJson(NALOZI_KEY, {}); }
+function loadNalozi() { return loadAllByPrefix(NALOG_PREFIX); }
 function loadSkenovi() { return loadJson(SKENOVI_KEY, { byKey: {}, meta: null }); }
 function loadDualPhaseKeywords() { return loadJson(DUALPHASE_KEY, DEFAULT_DUALPHASE_KEYWORDS); }
 
@@ -46,26 +50,22 @@ router.post('/api/nalozi', upload.array('files', 100), async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: 'Nema poslanih datoteka.' });
   }
-  try {
-    const nalozi = await loadNalozi();
-    const rezultati = [];
-    const greske = [];
+  const rezultati = [];
+  const greske = [];
 
-    for (const file of req.files) {
-      try {
-        const parsed = parseNalogWorkbook(file.buffer, file.originalname);
-        nalozi[parsed.nalogBase] = parsed;
-        rezultati.push({ file: file.originalname, nalogBase: parsed.nalogBase, stavki: parsed.items.length });
-      } catch (e) {
-        greske.push({ file: file.originalname, error: e.message });
-      }
+  // Svaki fajl parsiramo i spremamo NEOVISNO o ostalima - ne treba
+  // učitavati postojeće naloge (upsert po ključu, ne prepisivanje svega).
+  for (const file of req.files) {
+    try {
+      const parsed = parseNalogWorkbook(file.buffer, file.originalname);
+      await saveJson(NALOG_PREFIX + parsed.nalogBase, parsed);
+      rezultati.push({ file: file.originalname, nalogBase: parsed.nalogBase, stavki: parsed.items.length });
+    } catch (e) {
+      greske.push({ file: file.originalname, error: e.message });
     }
-
-    await saveJson(NALOZI_KEY, nalozi);
-    res.json({ ok: true, uneseno: rezultati, greske });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
   }
+
+  res.json({ ok: true, uneseno: rezultati, greske });
 });
 
 // --- Upload CSV skenova (zamjenjuje trenutni skup skenova cijelim novim izvozom) ---
@@ -89,16 +89,69 @@ router.post('/api/skenovi', upload.single('file'), async (req, res) => {
 });
 
 // --- Status: spoji naloge + skenove + (ako je konfiguriran) Trello CNC status ---
+// Kod velikog broja naloga (tisuće) NE šaljemo pune podatke (pozicije po
+// nalogu) za sve odjednom - to bi zaledilo browser. Bez pretrage vraćamo
+// samo sažetak (bez pozicija); s pretragom vraćamo pune podatke, ali SAMO
+// za naloge koji odgovaraju pretrazi (i najviše FULL_LIMIT njih).
+const FULL_LIMIT = 300;
+
 router.get('/api/status', async (req, res) => {
   try {
     const nalozi = await loadNalozi();
     const skenoviData = await loadSkenovi();
     const dualPhaseKeywords = await loadDualPhaseKeywords();
+    const search = (req.query.search || '').trim().toLowerCase();
+
     const status = computeStatus(nalozi, skenoviData.byKey || {}, dualPhaseKeywords);
     const forceRefresh = req.query.trelloRefresh === '1';
     const { trelloInfo } = await enrichWithTrello(status, forceRefresh);
     applyProductionPlanStatus(status); // mora ići NAKON Trello obogaćivanja (koristi cncGotovo)
-    res.json({ nalozi: status, skenoviMeta: skenoviData.meta || null, trelloInfo });
+
+    if (search) {
+      const matched = status.filter(n => {
+        const itemMatch = n.items.some(it =>
+          (it.partNumber || '').toLowerCase().includes(search) ||
+          (it.description || '').toLowerCase().includes(search)
+        );
+        const planMatch = n.productionPlanStatus && n.productionPlanStatus.some(pe =>
+          (pe.partNumber || '').toLowerCase().includes(search) ||
+          (pe.description || '').toLowerCase().includes(search)
+        );
+        return itemMatch || planMatch;
+      });
+      res.json({
+        mode: 'full',
+        nalozi: matched.slice(0, FULL_LIMIT),
+        totalMatched: matched.length,
+        truncated: matched.length > FULL_LIMIT,
+        totalNalozi: status.length,
+        skenoviMeta: skenoviData.meta || null,
+        trelloInfo
+      });
+    } else {
+      const summary = status.map(n => ({
+        nalogBase: n.nalogBase, nalogPuni: n.nalogPuni, projekt: n.projekt, opis: n.opis,
+        odjel: n.odjel, format: n.format, total: n.total, done: n.done, partial: n.partial,
+        missing: n.missing, percent: n.percent, trelloCard: n.trelloCard || null
+      }));
+      res.json({
+        mode: 'summary',
+        nalozi: summary,
+        totalNalozi: status.length,
+        skenoviMeta: skenoviData.meta || null,
+        trelloInfo
+      });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- Obriši SVE naloge odjednom ---
+router.delete('/api/nalozi', async (req, res) => {
+  try {
+    await deleteAllByPrefix(NALOG_PREFIX);
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -107,11 +160,10 @@ router.get('/api/status', async (req, res) => {
 // --- Obriši jedan radni nalog ---
 router.delete('/api/nalozi/:nalogBase', async (req, res) => {
   try {
-    const nalozi = await loadNalozi();
     const key = req.params.nalogBase.toUpperCase();
-    if (!nalozi[key]) return res.status(404).json({ error: 'Nalog nije pronađen.' });
-    delete nalozi[key];
-    await saveJson(NALOZI_KEY, nalozi);
+    const existing = await loadJson(NALOG_PREFIX + key, null);
+    if (!existing) return res.status(404).json({ error: 'Nalog nije pronađen.' });
+    await deleteKey(NALOG_PREFIX + key);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
