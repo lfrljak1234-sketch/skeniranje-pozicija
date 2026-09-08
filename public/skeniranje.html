@@ -57,6 +57,8 @@
   .step-chip.step-pending { background: #eee; color: #777; }
   .plan-section { margin-top: 16px; padding-top: 12px; border-top: 2px dashed var(--border); }
   .plan-title { font-weight: 600; margin-bottom: 8px; color: #444; }
+  .tag-chip { display: inline-flex; align-items: center; gap: 6px; background: #eef; color: #334; padding: 4px 10px; border-radius: 14px; font-size: 0.85rem; }
+  .tag-chip button { border: none; background: none; color: #a33; cursor: pointer; font-weight: bold; padding: 0; font-size: 0.9rem; }
 </style>
 </head>
 <body>
@@ -87,6 +89,21 @@
   <a class="btn secondary" href="/api/export-all.csv">Izvezi sve neskenirano (CSV)</a>
   <input type="text" id="searchInput" placeholder="Pretraži šifru ili opis..." style="flex:1; min-width:180px; padding:6px 10px; border:1px solid var(--border); border-radius:6px;">
   <label><input type="checkbox" id="onlyMissing"> Prikaži samo neskenirane pozicije</label>
+  <button class="secondary" onclick="toggleDualPhasePanel()">Dvofazne oznake</button>
+</div>
+<div id="dualPhasePanel" class="card" style="display:none;">
+  <strong>Dvofazne oznake (prije/nakon CNC obrade)</strong>
+  <div class="muted">
+    Pozicije čiji Part Number ili Opis sadrži jednu od ovih riječi trebaju sken
+    PRIJE obrade (preko NS naloga) I sken NAKON obrade (preko RN pozicije) da bi
+    bile potpuno gotove — vrijedi samo za CNC naloge.
+  </div>
+  <div id="dualPhaseTags" style="margin:10px 0; display:flex; flex-wrap:wrap; gap:6px;"></div>
+  <div style="display:flex; gap:8px;">
+    <input type="text" id="dualPhaseInput" placeholder="npr. fin" style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:6px;">
+    <button onclick="dodajDvofaznuOznaku()">Dodaj</button>
+  </div>
+  <div class="status-line" id="dualPhaseStatus"></div>
 </div>
 <div id="globalStatus"></div>
 

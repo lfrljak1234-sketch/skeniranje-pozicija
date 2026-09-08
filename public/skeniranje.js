@@ -52,6 +52,78 @@ setupDrop('boxSkenovi', 'inputSkenovi', async (files) => {
 document.getElementById('onlyMissing').addEventListener('change', render);
 document.getElementById('searchInput').addEventListener('input', render);
 
+// --- Dvofazne oznake ---
+let dualPhaseKeywords = [];
+
+function toggleDualPhasePanel() {
+  const panel = document.getElementById('dualPhasePanel');
+  const showing = panel.style.display !== 'none';
+  if (showing) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  ucitajDvofazneOznake();
+}
+
+async function ucitajDvofazneOznake() {
+  const statusEl = document.getElementById('dualPhaseStatus');
+  try {
+    const r = await fetch(API + '/dvofazne-oznake');
+    const data = await r.json();
+    dualPhaseKeywords = data.keywords || [];
+    renderDvofazneOznake();
+  } catch (e) {
+    statusEl.textContent = 'Greška pri učitavanju: ' + e.message;
+  }
+}
+
+function renderDvofazneOznake() {
+  const wrap = document.getElementById('dualPhaseTags');
+  wrap.innerHTML = dualPhaseKeywords.map((k, i) => `
+    <span class="tag-chip">${escapeHtml(k)} <button onclick="obrisiDvofaznuOznaku(${i})" title="Ukloni">×</button></span>
+  `).join('') || '<span class="muted">Nema oznaka.</span>';
+}
+
+async function spremiDvofazneOznake() {
+  const statusEl = document.getElementById('dualPhaseStatus');
+  statusEl.textContent = 'Spremam...';
+  try {
+    const r = await fetch(API + '/dvofazne-oznake', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords: dualPhaseKeywords })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Greška pri spremanju.');
+    statusEl.textContent = 'Spremljeno.';
+    refresh();
+  } catch (e) {
+    statusEl.textContent = 'Greška: ' + e.message;
+  }
+}
+
+function dodajDvofaznuOznaku() {
+  const input = document.getElementById('dualPhaseInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (dualPhaseKeywords.some(k => k.toLowerCase() === val.toLowerCase())) {
+    input.value = '';
+    return;
+  }
+  dualPhaseKeywords.push(val);
+  input.value = '';
+  renderDvofazneOznake();
+  spremiDvofazneOznake();
+}
+
+function obrisiDvofaznuOznaku(i) {
+  dualPhaseKeywords.splice(i, 1);
+  renderDvofazneOznake();
+  spremiDvofazneOznake();
+}
+
+document.getElementById('dualPhaseInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') dodajDvofaznuOznaku();
+});
+
 function refresh() {
   return refreshInternal(false);
 }
