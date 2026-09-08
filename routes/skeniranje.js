@@ -152,19 +152,22 @@ router.get('/api/status', async (req, res) => {
         });
       }
 
-      const groups = Array.from(groupsMap.values()).map(g => {
-        const total = g.children.reduce((s, c) => s + c.total, 0);
-        const done = g.children.reduce((s, c) => s + c.done, 0);
-        const partial = g.children.reduce((s, c) => s + c.partial, 0);
-        g.children.sort((a, b) => (a.odjel || '').localeCompare(b.odjel || ''));
+      const groups = Array.from(groupsMap.values())
+        .filter(g => g.children.some(c => c.format === 'RN')) // NS-only projekte (bez ijednog RN naloga) ne prikazujemo - to su samo pozadinski podaci za usporedbu
+        .map(g => {
+        const rnChildren = g.children.filter(c => c.format === 'RN'); // NS naloge se koriste samo u pozadini, ne prikazuju se ni u zbroju ni u popisu
+        const total = rnChildren.reduce((s, c) => s + c.total, 0);
+        const done = rnChildren.reduce((s, c) => s + c.done, 0);
+        const partial = rnChildren.reduce((s, c) => s + c.partial, 0);
+        rnChildren.sort((a, b) => (a.odjel || '').localeCompare(b.odjel || ''));
         return {
           projectKey: g.projectKey,
           projekt: g.projekt,
           opisBase: g.opisBase,
           total, done, partial,
           percent: total > 0 ? Math.round((done / total) * 1000) / 10 : 0,
-          brojNaloga: g.children.length,
-          children: g.children
+          brojNaloga: rnChildren.length,
+          children: rnChildren
         };
       });
       groups.sort((a, b) => a.opisBase.localeCompare(b.opisBase));
