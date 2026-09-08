@@ -141,8 +141,8 @@ async function refreshInternal(trelloRefresh) {
   if (search) params.set('search', search);
   const r = await fetch(API + '/status' + (params.toString() ? '?' + params.toString() : ''));
   const data = await r.json();
-  lastStatus = data.nalozi;
   lastMode = data.mode || 'summary';
+  lastStatus = lastMode === 'summary' ? (data.grupe || []) : (data.nalozi || []);
   lastMeta = data;
   const meta = data.skenoviMeta;
   const globalEl = document.getElementById('globalStatus');
@@ -281,39 +281,80 @@ function renderSummary() {
     return;
   }
 
-  let rows = onlyMissing ? lastStatus.filter(n => n.done < n.total) : lastStatus;
-  const rowsHtml = rows.map(n => `
-    <tr class="clickable-row ${n.done >= n.total ? 'done' : (n.partial > 0 || n.done > 0 ? 'partial' : 'missing')}" data-nalog="${n.nalogBase}">
-      <td>${escapeHtml(n.nalogPuni)}</td>
-      <td>${escapeHtml(n.projekt || '')}</td>
-      <td>${escapeHtml(n.opis || '')}</td>
-      <td>${n.format}</td>
-      <td>${n.done}/${n.total}${n.partial ? ` (${n.partial} djelomično)` : ''}</td>
-      <td>${n.percent}%</td>
-      <td>${n.trelloCard ? escapeHtml((n.trelloCard.machines || []).join(', ')) : ''}</td>
-      <td><a class="btn secondary" href="/api/export/${n.nalogBase}.csv" onclick="event.stopPropagation()">CSV</a> <a class="btn secondary" href="/api/print/${n.nalogBase}" target="_blank" onclick="event.stopPropagation()">Ispis</a> <button class="danger" onclick="event.stopPropagation(); obrisiNalog('${n.nalogBase}')">Obriši</button></td>
+  const groups = onlyMissing ? lastStatus.filter(g => g.done < g.total) : lastStatus;
+  const totalNaloga = lastStatus.reduce((s, g) => s + g.brojNaloga, 0);
+
+  const rowsHtml = groups.map(g => `
+    <tr class="clickable-row group-row ${g.done >= g.total ? 'done' : (g.partial > 0 || g.done > 0 ? 'partial' : 'missing')}" data-project="${escapeHtml(g.projectKey)}">
+      <td><span class="expand-arrow">▸</span> ${escapeHtml(g.opisBase)}</td>
+      <td>${escapeHtml(g.projekt || '')}</td>
+      <td>${g.brojNaloga} naloga</td>
+      <td>${g.done}/${g.total}${g.partial ? ` (${g.partial} djelomično)` : ''}</td>
+      <td>${g.percent}%</td>
     </tr>
-    <tr class="detail-row" id="detail-${n.nalogBase}" style="display:none;"><td colspan="8"></td></tr>
+    <tr class="children-row" id="children-${cssId(g.projectKey)}" style="display:none;"><td colspan="5"></td></tr>
   `).join('');
 
   root.innerHTML = `
     <div class="card muted" style="margin-bottom:10px;">
-      Prikazan je sažetak (${lastStatus.length} naloga) bez pojedinačnih pozicija — velik broj naloga se ne
-      iscrtava odjednom u punom detalju jer bi to usporilo browser. Upiši šifru ili opis u polje za pretragu
-      gore da vidiš pune pozicije za konkretan nalog, ili <strong>klikni na redak</strong> da razotkriješ
-      pozicije baš tog naloga.
+      Prikazano ${lastStatus.length} projekata (${totalNaloga} naloga ukupno), grupirano po projektnom kodu —
+      velik broj naloga se ne iscrtava odjednom u punom detalju jer bi to usporilo browser. Upiši šifru ili
+      opis u polje za pretragu gore da vidiš pune pozicije za konkretan nalog, ili <strong>klikni na projekt</strong>
+      da vidiš njegove naloge po odjelu (CNC, SSP, ASL...), pa na pojedini nalog za pune pozicije.
     </div>
     <table>
       <thead><tr>
-        <th>Radni nalog</th><th>Projekt</th><th>Opis</th><th>Format</th><th>Gotovo</th><th>%</th><th>CNC strojevi</th><th></th>
+        <th>Projekt (kod)</th><th>Naziv projekta</th><th>Broj naloga</th><th>Gotovo</th><th>%</th>
       </tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>
   `;
 
-  root.querySelectorAll('tr.clickable-row').forEach(tr => {
+  root.querySelectorAll('tr.group-row').forEach(tr => {
+    tr.addEventListener('click', () => toggleGroup(tr.dataset.project));
+  });
+}
+
+function cssId(s) {
+  return String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function toggleGroup(projectKey) {
+  const row = document.getElementById('children-' + cssId(projectKey));
+  const cell = row.querySelector('td');
+  const arrow = document.querySelector(`tr.group-row[data-project="${CSS.escape(projectKey)}"] .expand-arrow`);
+
+  if (row.style.display !== 'none') {
+    row.style.display = 'none';
+    if (arrow) arrow.textContent = '▸';
+    return;
+  }
+
+  const group = lastStatus.find(g => g.projectKey === projectKey);
+  const childRows = group.children.map(c => `
+    <tr class="clickable-row" data-nalog="${c.nalogBase}">
+      <td>${escapeHtml(c.odjel || c.format)}</td>
+      <td>${escapeHtml(c.nalogPuni)}</td>
+      <td>${c.done}/${c.total}${c.partial ? ` (${c.partial} djelomično)` : ''}</td>
+      <td>${c.percent}%</td>
+      <td>${c.trelloCard ? escapeHtml((c.trelloCard.machines || []).join(', ')) : ''}</td>
+      <td><a class="btn secondary" href="/api/export/${c.nalogBase}.csv" onclick="event.stopPropagation()">CSV</a> <a class="btn secondary" href="/api/print/${c.nalogBase}" target="_blank" onclick="event.stopPropagation()">Ispis</a> <button class="danger" onclick="event.stopPropagation(); obrisiNalog('${c.nalogBase}')">Obriši</button></td>
+    </tr>
+    <tr class="detail-row" id="detail-${c.nalogBase}" style="display:none;"><td colspan="6"></td></tr>
+  `).join('');
+
+  cell.innerHTML = `
+    <table class="child-table">
+      <thead><tr><th>Odjel</th><th>Radni nalog</th><th>Gotovo</th><th>%</th><th>CNC strojevi</th><th></th></tr></thead>
+      <tbody>${childRows}</tbody>
+    </table>
+  `;
+  cell.querySelectorAll('tr.clickable-row').forEach(tr => {
     tr.addEventListener('click', () => toggleNalogDetail(tr.dataset.nalog));
   });
+
+  row.style.display = 'table-row';
+  if (arrow) arrow.textContent = '▾';
 }
 
 async function toggleNalogDetail(nalogBase) {

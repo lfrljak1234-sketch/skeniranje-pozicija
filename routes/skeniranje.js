@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { parseNalogWorkbook, parseSkenoviCsv, computeStatus, applyProductionPlanStatus, DEFAULT_DUALPHASE_KEYWORDS } = require('../lib/parse');
+const { parseNalogWorkbook, parseSkenoviCsv, computeStatus, applyProductionPlanStatus, DEFAULT_DUALPHASE_KEYWORDS, opisMatchKey } = require('../lib/parse');
 const { loadJson, saveJson, deleteKey, loadAllByPrefix, deleteAllByPrefix } = require('../lib/store');
 const { enrichWithTrello } = require('../lib/trello');
 
@@ -129,14 +129,49 @@ router.get('/api/status', async (req, res) => {
         trelloInfo
       });
     } else {
-      const summary = status.map(n => ({
-        nalogBase: n.nalogBase, nalogPuni: n.nalogPuni, projekt: n.projekt, opis: n.opis,
-        odjel: n.odjel, format: n.format, total: n.total, done: n.done, partial: n.partial,
-        missing: n.missing, percent: n.percent, trelloCard: n.trelloCard || null
-      }));
+      // Grupiraj po projektu (isti "opis" kod bez dodatka odjela, npr.
+      // "1096-1-ELE-B1X-01") - unutar projekta obično postoje odvojeni
+      // naloge po odjelu (CNC, SSP, ASL, INC, PAW...). Ovo olakšava
+      // snalaženje kroz veliki broj naloga u sažetku.
+      const groupsMap = new Map();
+      for (const n of status) {
+        const key = opisMatchKey(n.opis) || n.nalogBase;
+        if (!groupsMap.has(key)) {
+          groupsMap.set(key, { projectKey: key, projekt: n.projekt, opisBase: null, children: [] });
+        }
+        const group = groupsMap.get(key);
+        if (!group.opisBase) {
+          const full = String(n.opis || '').trim();
+          group.opisBase = full.split(/\s+-\s+/)[0].trim() || key;
+        }
+        if (!group.projekt && n.projekt) group.projekt = n.projekt;
+        group.children.push({
+          nalogBase: n.nalogBase, nalogPuni: n.nalogPuni, opis: n.opis, odjel: n.odjel,
+          format: n.format, total: n.total, done: n.done, partial: n.partial,
+          missing: n.missing, percent: n.percent, trelloCard: n.trelloCard || null
+        });
+      }
+
+      const groups = Array.from(groupsMap.values()).map(g => {
+        const total = g.children.reduce((s, c) => s + c.total, 0);
+        const done = g.children.reduce((s, c) => s + c.done, 0);
+        const partial = g.children.reduce((s, c) => s + c.partial, 0);
+        g.children.sort((a, b) => (a.odjel || '').localeCompare(b.odjel || ''));
+        return {
+          projectKey: g.projectKey,
+          projekt: g.projekt,
+          opisBase: g.opisBase,
+          total, done, partial,
+          percent: total > 0 ? Math.round((done / total) * 1000) / 10 : 0,
+          brojNaloga: g.children.length,
+          children: g.children
+        };
+      });
+      groups.sort((a, b) => a.opisBase.localeCompare(b.opisBase));
+
       res.json({
         mode: 'summary',
-        nalozi: summary,
+        grupe: groups,
         totalNalozi: status.length,
         skenoviMeta: skenoviData.meta || null,
         trelloInfo
