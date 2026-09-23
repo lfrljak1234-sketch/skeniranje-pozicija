@@ -152,6 +152,9 @@ router.get('/api/status', async (req, res) => {
 
     if (search) {
       const matched = status.filter(n => {
+        const nalogMatch = (n.nalogPuni || '').toLowerCase().includes(search) ||
+          (n.opis || '').toLowerCase().includes(search) ||
+          (n.nalogBase || '').toLowerCase().includes(search);
         const itemMatch = n.items.some(it =>
           (it.partNumber || '').toLowerCase().includes(search) ||
           (it.description || '').toLowerCase().includes(search)
@@ -160,7 +163,7 @@ router.get('/api/status', async (req, res) => {
           (pe.partNumber || '').toLowerCase().includes(search) ||
           (pe.description || '').toLowerCase().includes(search)
         );
-        return itemMatch || planMatch;
+        return nalogMatch || itemMatch || planMatch;
       });
       res.json({
         mode: 'full',

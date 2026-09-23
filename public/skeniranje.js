@@ -458,8 +458,17 @@ function renderNalogCard(nalog, search, opts) {
     : document.getElementById('onlyMissing').checked;
   const alwaysOpen = !!(opts && opts.alwaysOpen);
 
+  // Ako je pogodak na razini samog naloga (npr. pretraga po broju/oznaci
+  // NS naloga, ne po šifri pozicije), prikaži SVE njegove pozicije - ne
+  // filtriraj retke po tekstu koji se odnosi na nalog, a ne na poziciju.
+  const nalogLevelMatch = !!(search && (
+    (nalog.nalogPuni || '').toLowerCase().includes(search) ||
+    (nalog.opis || '').toLowerCase().includes(search) ||
+    (nalog.nalogBase || '').toLowerCase().includes(search)
+  ));
+
   function matchesSearch(it) {
-    if (!search) return true;
+    if (!search || nalogLevelMatch) return true;
     return (it.partNumber || '').toLowerCase().includes(search) ||
            (it.description || '').toLowerCase().includes(search);
   }
